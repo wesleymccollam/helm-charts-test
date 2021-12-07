@@ -1,0 +1,1328 @@
+############################################################
+# Ping Identity DevOps values.yaml
+############################################################
+# The yaml is separated into 2 major sections:
+#  - global - Represents the base set of values that will
+#             be used for each product, if that product
+#             doesn't override the global values.
+#
+#  - image  - For every image/product, the values will
+#             be merged with the global settings, and
+#             take precedence.
+############################################################
+
+############################################################
+# Global values
+############################################################
+global:
+  ############################################################
+  # annotations - Annotations listed, will be added to the
+  #               kubernetes resource
+  ############################################################
+  annotations: {}
+
+  ############################################################
+  # envs - Environment variables listed will be added to the
+  #        global-env-vars configmap.
+  #
+  # NOTE: Environment variables listed at the global: level
+  #       will actually end up being listed twice in the
+  #       configmaps (i.e. global-env-vars and product-env-vars)
+  ############################################################
+  envs: {}
+
+  ############################################################
+  #  addReleaseNameToResource: Provides global ability to add
+  #                            names to kubernetes resources
+  #                      none: No use of Release.Name
+  #                    append: Appends the Release.Name
+  #                   prepend: Prepends the Release.Name ** DEFAULT **
+  ############################################################
+  addReleaseNameToResource: prepend
+
+  ############################################################
+  # Ingress
+  #
+  #          ingress.enabled: {true | false}
+  # ingress.addReleaseToHost: {prepend | append | subdomain | none}
+  #    ingress.defaultDomain: Replaces with "_defaultDomain_" in host fields
+  # ingress.defaultTlsSecret: Replaces with "_defaultTlsSecret_" in tls.secretName
+  ############################################################
+  ingress:
+    enabled: false
+    addReleaseNameToHost: subdomain
+    defaultDomain: example.com
+    defaultTlsSecret:
+    annotations: {}
+      # nginx example
+      # nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      # kubernetes.io/ingress.class: "nginx-public"
+
+  ############################################################
+  # Internal Certificates
+  #
+  # If set to true, then an internal certificate secret will
+  # be created along with mount of the certificate in
+  # /run/secrets/internal-cert (creates a tls.crt and tls.key)
+  #
+  # By default the Issuer of the cert will be the service name
+  # created by the Helm Chart.  Additionally, the ingress hosts,
+  # if enabled, will be added to the list of X509v3 Subject Alternative Name
+  #
+  # Use the additionalHosts and additionalIPs if additional custom
+  # names and ips are needed.
+  #
+  #      privateCert.generate: {true | false}
+  #      privateCert.additionalHosts: {optional array of hosts}
+  #      privateCert.additionalIPs: {optional array of IP Addresses}
+  ############################################################
+  privateCert:
+    generate: false
+    additionalHosts: []
+    additionalIPs: []
+
+  ############################################################
+  # Master Password Generation
+  #
+  # Uses Helm function derivePassword, which uses the master password
+  # specification: https://masterpassword.app/masterpassword-algorithm.pdf
+  #
+  #      masterPassword.enabled: {true | false}
+  #      masterPassword.strength: {master password template: long | maximum}
+  #      masterPassword.name: {defaults to .Release.Name}
+  #      masterPassword.site: {defaults to .Chart.Name}
+  #      masterPassword.secret: {defaults to .Release.Namespace}
+  #
+  #      masterPassword:
+  #        enabled: true
+  #        strength: long
+  #        name:   # default - .Release.Name
+  #        site:   # default - .Chart.Name
+  #        secret: # default - .Release.Namespace
+  ############################################################
+  masterPassword:
+    enabled: false
+
+  ############################################################
+  # Fields used to annotate secret hashicorp vault information
+  #
+  # These annotations names will be automatically be
+  # appended to the 'vault.hashicorp.com/'
+  #
+  # https://www.vaultproject.io/docs/platform/k8s/injector/annotations
+  ############################################################
+  vault:
+    enabled: false
+    hashicorp:
+      annotations:
+        agent-inject: true
+        agent-init-first: true
+        agent-pre-populate-only: true
+        log-level: info
+        preserve-secret-case: true
+        role: k8s-default
+        secret-volume-path: /run/secrets
+        serviceAccountName: vault-auth
+  #   secrets:
+  #     {secret-name}:
+  #       {secret-key | to-json}:
+  #         path: /opt/in/some/location/secrets
+  #         file: devops-secret.env
+
+  ############################################################
+  # Image
+  #
+  # By default the images uses will be indicated by these
+  # variables.  An example might look like:
+  #
+  #   pingidentity/pingdataconsole:2111 (November, 2021)
+  #
+  # NOTE: image.name MUST be set in child chart
+  #   Example: image.name: pingfederate
+  ############################################################
+  image:
+    repository: pingidentity
+    name:
+    tag: "2111"
+    pullPolicy: IfNotPresent
+
+  ############################################################
+  # External Images (typically for initContainers)
+  #
+  # Provides ability to use external images for various purposes
+  # such as using curl, waitfor, ...  Example below is for use
+  # of the pingtoolkit image used as a waitFor and generation of
+  # private cert initContainers.
+  #
+  # Values found within each external image are copied directly
+  # to the container/initContainer.
+  ############################################################
+  externalImage:
+    pingtoolkit:
+      image: pingidentity/pingtoolkit:2111
+      imagePullPolicy: IfNotPresent
+      resources:
+        limits:
+          cpu: 500m
+          memory: 128Mi
+        requests:
+          cpu: 1m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+          - ALL
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 9031
+        runAsGroup: 0
+
+  ############################################################
+  # Services
+  #
+  # Creates services mapping a port to a targetPort on the
+  # corresponding container.
+  #
+  # dataService    - If set to true, a ClusterIP service is
+  #                  created reachable within the cluster.
+  #                  A single IP is provided and the service
+  #                  will round-robin across the backend containers.
+  #
+  # clusterService - If set to true, a "headless" service is
+  #                  explicitly specifying "None" for the
+  #                  clusterIP.  DNS requests to this service
+  #                  will provide one of the IPs of the backend
+  #                  containers.
+  #
+  # containerPort  - Port that is used on the kubernetes container.
+  #
+  # servicePort    - Port that is available from the kubernetes service
+  #                  Note: if clusterService=true this port on the
+  #                        cluster service is not really
+  #                        used as headless service always maps through
+  #                        to the container port
+  #
+  # ingressPort    - Port that is available from the kubernetes ingress
+  #
+  # clusterServiceName - If set, then this name will be used as the cluster
+  #                      service name (i.e clusterService == true).
+  #
+  # https://kubernetes.io/docs/concepts/services-networking/service/
+  ############################################################
+  services: {}
+  #  admin:
+  #    containerPort: 9999
+  #    servicePort: 9999
+  #    ingressPort: 9999
+  #    dataService: true
+  #  clusterbind:
+  #    containerPort: 7600
+  #    servicePort: 7600
+  #    clusterService: true
+  #  clusterfail:
+  #    containerPort: 7700
+  #    servicePort: 7700
+  #    clusterService: true
+  #  clusterExternalDNSHostname:
+  #  clusterServiceName:
+
+
+  ############################################################
+  # Workload
+  #
+  # Two workloads supported:
+  #  - Deployment
+  #  - StatefulSet
+  ############################################################
+  workload:
+    # Can be Deployment or StatefulSet
+    type: Deployment
+
+    annotations: {}
+
+    ############################################################
+    # schedulerName
+    #
+    # Provide the kubernetes default-scheduler, and allow for override
+    #
+    # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-multiple-schedulers/
+    ############################################################
+    schedulerName: default-scheduler
+
+    ############################################################
+    # shareProcessNamespace
+    #
+    # Share process namespace between containers in a pod. Disabled by default.
+    #
+    # https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace/
+    ############################################################
+    shareProcessNamespace: false
+
+    ############################################################
+    # Deployments
+    #
+    # Detailed information used to create a deployment specific
+    # workload.
+    #
+    # https://kubernetes.io/docs/concepts/workloads/controllers/deployment
+    ############################################################
+    deployment:
+      strategy:
+        # Can be RollingUpdate or Recreate
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+
+    ############################################################
+    # StatefulSets
+    #
+    # Detailed information used to create a statefulSet specific
+    # workload.
+    #
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset
+    ############################################################
+    statefulSet:
+      # Used for canary testing if n>0
+      partition: 0
+
+      ############################################################
+      # Persistent Volumes
+      #
+      # For every volume defined in the volumes list, 3 items will be
+      # created in the StatefulSet
+      #   1. container.volumeMounts - name and mountPath
+      #   2. template.spec.volume - name and persistentVolumeClaim.claimName
+      #   3. spec.volumeClaimTemplates - persistentVolumeClaim
+      #
+      # https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+      ############################################################
+      persistentvolume:
+        enabled: true
+        volumes:
+          out-dir:
+            mountPath: /opt/out
+            persistentVolumeClaim:
+              accessModes:
+              - ReadWriteOnce
+              storageClassName:
+              resources:
+                requests:
+                  storage: 4Gi
+
+    ############################################################
+    # securityContext
+    #
+    # Note: The user (9031) and group (0) represent the current user
+    #       and group used with PingIdentity images (except PingDelegator).
+    #       The fsGroup is set to same as group, however, it can be set to
+    #       any gid number.
+    #       The fsGroup is required for any workloads that volumeMount
+    #       a pvc (i.e. StatefulSets)
+    ############################################################
+    securityContext:
+      fsGroup: 0
+      runAsUser: 9031
+      runAsGroup: 0
+      # allowPrivilegeEscalation: false
+      # capabilities:
+      #   drop:
+      #   - ALL
+
+  ############################################################
+  # Container Information
+  #
+  # https://kubernetes.io/docs/concepts/workloads/controllers/
+  ############################################################
+  container:
+    # replicaCount - Instructs Deployment/StatefulSet now many containers to run
+    replicaCount: 1
+
+    # resources - Request  0 cpu/0 GB
+    #             Limit    4 cpu/0 GB
+    resources:
+      requests:
+        cpu: 0
+        memory: 0
+      limits:
+        cpu: 0
+        memory: 0
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    terminationGracePeriodSeconds: 30
+
+    envFrom: []
+    # Additional envFrom configmap/secret references can be added
+    # envFrom:
+    # - configMapRef:
+    #     name: my-example-configmap
+    #     optional: true
+    # - secretRef:
+    #     name: my-example-secrets
+    #     optional: true
+
+    ############################################################
+    # container life handlers, allowing for lifecycle events such
+    # as postStart and preStop events
+    #
+    # https://kubernetes.io/docs/tasks/configure-pod-container/attach-handler-lifecycle-event
+    ############################################################
+    lifecycle: {}
+    # Example
+    # lifecycle:
+    #   postStart:
+    #     exec:
+    #       command: ["/bin/sh", "-c", "echo Start Complete > /tmp/message"]
+
+    ############################################################
+    # Probes
+    #
+    # Probes have a number of fields that you can use to more precisely control the
+    # behavior of liveness and readiness checks.
+    #
+    # https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+    ############################################################
+    probes:
+      livenessProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        initialDelaySeconds: 30
+        periodSeconds: 30
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 4
+      readinessProbe:
+        exec:
+          command:
+            - /opt/readiness.sh
+        initialDelaySeconds: 30
+        periodSeconds: 5
+        timeoutSeconds: 5
+        successThreshold: 1
+        failureThreshold: 4
+      startupProbe:
+        exec:
+          command:
+            - /opt/liveness.sh
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 90
+
+  ############################################################
+  # Licensing
+  #
+  # license.secret.devOps
+  #    Identify the k8s secret to keep the DevOps USER/KEY if used during deployment.
+  #
+  # NOTE: licenseSecretName can be set in deploying chart values to specify a secret
+  #       with actual product license.  This would override the DevOps secret.
+  #
+  # Using pingctl utility (brew install pingctl):
+  #    pingctl k8s generate devops-secret | kubectl apply -f -
+  ############################################################
+  license:
+    secret:
+      devOps: devops-secret
+
+  #############################################################
+  # Includes for sidecars, initContainers and volumes
+  #
+  # At both global and product level, includes of sidecars,
+  # initContainers and volumes can be provided.  By default,
+  # none are included.
+  #############################################################
+  includeSidecars: []
+  includeInitContainers: []
+  includeVolumes: []
+
+#############################################################
+# Sidecar Definitions
+#
+# Available sidecar definitions available to product
+#############################################################
+sidecars: {}
+# Example:
+# sidecars:
+#   logger:
+#     name: log-container
+#     image: pingidentity/pingtoolkit:2111
+#     volumeMounts:
+#       - mountPath: /tmp/logs/
+#         name: logger
+#         readOnly: false
+
+#############################################################
+# InitContainer Definitions
+#
+# Available initContainer definitions available to product
+#############################################################
+initContainers: {}
+# Example:
+# initContainers:
+#   init-example:
+#     name: 01-init
+#     image: pingidentity/pingtoolkit:2111
+#     command: ['sh', '-c', 'echo "InitContainer 1"']
+
+#############################################################
+# Volume Definitions
+#
+# Available volume definitions available to be used within
+# sidecars, initContainers or main product containers
+#############################################################
+volumes: {}
+# Examples:
+# volumes:
+#   logger:
+#     emptyDir: {}
+
+#############################################################
+# Image/Product values
+#############################################################
+
+#############################################################
+# ldap-sdk-tools values
+#############################################################
+ldap-sdk-tools:
+  enabled: false
+  name: ldap-sdk-tools
+  image:
+    name: ldap-sdk-tools
+
+  container:
+    command: "tail -f /dev/null"
+
+    probes:
+      livenessProbe:
+        exec:
+          command:
+            - echo
+      readinessProbe:
+        exec:
+          command:
+            - echo
+      startupProbe:
+        exec:
+          command:
+            - echo
+
+#############################################################
+# pingfederate-admin values
+#############################################################
+pingfederate-admin:
+  enabled: false
+  name: pingfederate-admin
+  image:
+    name: pingfederate
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  workload:
+    deployment:
+      strategy:
+        type: Recreate
+
+  # Example: If PingFederate Admin relies on pingdirectory for AuthN
+  #          Creates init container wait-for on pingdirectory ldaps service
+  #
+  # container:
+  #   waitFor:
+  #     pingdirectory:
+  #       service: ldaps
+  #       timeoutSeconds: 300
+
+
+  # Example: Pulling in a secret (called pingfederate-license) into container
+  #          mounting the name (license) value into a file (/opt/in/.../pingfederate.lic)
+  #
+  # secretVolumes:
+  #   pingfederate-license:
+  #     items:
+  #       license: /opt/in/instance/server/default/conf/pingfederate.lic
+
+  # Example: Pulling in a configMap (called pingfederate-props) into container
+  #          mounting the name (pf-props) value into a file (/opt/in/.../pingfederate.properties)
+  #
+  # configMapVolumes:
+  #  pingfederate-props:
+  #     items:
+  #       pf-props: /opt/in/etc/pingfederate.properties
+
+  services:
+    https:
+      servicePort: 9999
+      containerPort: 9999
+      ingressPort: 443
+      dataService: true
+    clusterbind:
+      servicePort: 7600
+      containerPort: 7600
+      clusterService: true
+    clusterfail:
+      servicePort: 7700
+      containerPort: 7700
+      clusterService: true
+    clusterServiceName: pingfederate-cluster
+
+  ingress:
+    hosts:
+      - host: pingfederate-admin._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingfederate-admin._defaultDomain_
+
+#############################################################
+# pingfederate-engine values
+#############################################################
+pingfederate-engine:
+  enabled: false
+  name: pingfederate-engine
+  image:
+    name: pingfederate
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    waitFor:
+      pingfederate-admin:
+        service: https
+        timeoutSeconds: 300
+
+  envs:
+    PF_ADMIN_PORT: "9999"
+
+  #############################################################
+  # Horizontal Pod Autoscaling
+  # By default this is disabled, since there dependencies to the containers
+  # CPU and/or Memory limits.
+  #
+  # If enabled, ensure that a proper container.resource.request.cpu limit is set
+  # and coordinated with the a targetCPUUtilizationPercentage or
+  # targetMemoryUtilizationPercentage
+  #############################################################
+  clustering:
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 4
+      targetCPUUtilizationPercentage: 75
+      # targetMemoryUtilizationPercentage: 50
+      behavior: {}
+      # Custom Horizontal Pod Scaling behavior
+      # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#default-behavior
+      #  scaleDown:
+      #    stabilizationWindowSeconds: 300
+      #    policies:
+      #    - type: Percent
+      #      value: 100
+      #      periodSeconds: 15
+      #  scaleUp:
+      #    stabilizationWindowSeconds: 0
+      #    policies:
+      #    - type: Percent
+      #      value: 100
+      #      periodSeconds: 15
+      #    - type: Pods
+      #      value: 4
+      #      periodSeconds: 15
+      #    selectPolicy: Max
+
+    autoscalingMetricsTemplate: []
+    # Custom or additional autoscaling metrics
+    # ref: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-custom-metrics
+    # - type: Pods
+    #   pods:
+    #     metric:
+    #       name: custom-metric
+    #     target:
+    #       type: AverageValue
+    #       averageValue: 10000m
+
+  services:
+    https:
+      servicePort: 9031
+      containerPort: 9031
+      ingressPort: 443
+      dataService: true
+    clusterbind:
+      servicePort: 7600
+      containerPort: 7600
+      clusterService: true
+    clusterfail:
+      servicePort: 7700
+      containerPort: 7700
+      clusterService: true
+    clusterServiceName: pingfederate-cluster
+
+  ingress:
+    hosts:
+      - host: pingfederate-engine._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingfederate-engine._defaultDomain_
+
+#############################################################
+# pingdirectory values
+#############################################################
+pingdirectory:
+  enabled: false
+  name: pingdirectory
+  image:
+    name: pingdirectory
+
+  container:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 2Gi
+      limits:
+        cpu: 2
+        memory: 8Gi
+
+    terminationGracePeriodSeconds: 300
+
+    probes:
+      readinessProbe:
+        periodSeconds: 30
+        failureThreshold: 4
+      startupProbe:
+        periodSeconds: 10
+        failureThreshold: 180
+
+    # Example affinity for typical directory installation
+    #
+    # affinity:
+    #   podAntiAffinity:
+    #     # Add a hard requirement for each PD pod to be deployed to a different node
+    #     requiredDuringSchedulingIgnoredDuringExecution:
+    #     - labelSelector:
+    #         matchExpressions:
+    #         - key: app.kubernetes.io/name
+    #           operator: In
+    #           values:
+    #           - pingdirectory
+    #       topologyKey: "kubernetes.io/hostname"
+    #     # Add a soft requirement for each PD pod to be deployed to a different AZ
+    #     preferredDuringSchedulingIgnoredDuringExecution:
+    #     - weight: 1
+    #       podAffinityTerm:
+    #         labelSelector:
+    #           matchExpressions:
+    #           - key: app.kubernetes.io/name
+    #             operator: In
+    #             values:
+    #             - pingdirectory
+    #         topologyKey: "failure-domain.beta.kubernetes.io/zone"     <--- kubernetes prior to 1.17
+    #         topologyKey: "topology.kubernetes.io/region"              <--- kubernetes 1.17+
+
+  workload:
+    type: StatefulSet
+    statefulSet:
+      persistentvolume:
+        volumes:
+          out-dir:
+            persistentVolumeClaim:
+              resources:
+                requests:
+                  storage: 8Gi
+
+  envs:
+    MAKELDIF_USERS: "20000"
+
+  services:
+    ldap:
+      servicePort: 389
+      containerPort: 1389
+      dataService: true
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      dataService: true
+      clusterService: true
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    clusterServiceName: pingdirectory-cluster
+
+  ingress:
+    hosts:
+      - host: pingdirectory._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdirectory._defaultDomain_
+
+
+#############################################################
+# pingdirectoryproxy values
+#############################################################
+pingdirectoryproxy:
+  enabled: false
+  name: pingdirectoryproxy
+  image:
+    name: pingdirectoryproxy
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  services:
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    https:
+      servicePort: 443
+      containerPort: 1443
+      dataService: true
+    clusterServiceName: pingdirectoryproxy-cluster
+
+#############################################################
+# pingdelegator values
+#############################################################
+pingdelegator:
+  enabled: false
+  name: pingdelegator
+  image:
+    name: pingdelegator
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 32Mi
+      limits:
+        cpu: 500m
+        memory: 64Mi
+
+  publicPort: 443
+
+  tokenProvider:
+    port: 9031
+    clientId: dadmin
+
+  pingDirectoryServer:
+    port: 443
+
+  services:
+    https:
+      servicePort: 6443
+      containerPort: 6443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingdelegator._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdelegator._defaultDomain_
+
+#############################################################
+# pingdatasync values
+#############################################################
+pingdatasync:
+  enabled: false
+  name: pingdatasync
+  image:
+    name: pingdatasync
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  services:
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    https:
+      servicePort: 443
+      containerPort: 1443
+      dataService: true
+    clusterServiceName: pingdatasync-cluster
+
+#############################################################
+# pingauthorize values
+#############################################################
+pingauthorize:
+  enabled: false
+  name: pingauthorize
+  image:
+    name: pingauthorize
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1.5Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  services:
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    clusterServiceName: pingauthorize-cluster
+
+  ingress:
+    hosts:
+      - host: pingauthorize._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingauthorize._defaultDomain_
+
+#############################################################
+# pingauthorizepap values
+#############################################################
+pingauthorizepap:
+  enabled: false
+  name: pingauthorizepap
+  image:
+    name: pingauthorizepap
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  envs:
+    HTTPS_PORT: "8443"
+
+  services:
+    https:
+      servicePort: 8443
+      containerPort: 8443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingauthorizepap._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingauthorizepap._defaultDomain_
+
+#############################################################
+# pingdatagovernance values
+#############################################################
+pingdatagovernance:
+  enabled: false
+  name: pingdatagovernance
+  image:
+    name: pingdatagovernance
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1.5Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  services:
+    https:
+      servicePort: 443
+      containerPort: 1443
+      ingressPort: 443
+      dataService: true
+    ldaps:
+      servicePort: 636
+      containerPort: 1636
+      clusterService: true
+    clusterServiceName: pingdatagovernance-cluster
+
+  ingress:
+    hosts:
+      - host: pingdatagovernance._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdatagovernance._defaultDomain_
+
+#############################################################
+# pingdatagovernancepap values
+#############################################################
+pingdatagovernancepap:
+  enabled: false
+  name: pingdatagovernancepap
+  image:
+    name: pingdatagovernancepap
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .75Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  envs:
+    HTTPS_PORT: "8443"
+  services:
+    https:
+      servicePort: 8443
+      containerPort: 8443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingdatagovernancepap._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdatagovernancepap._defaultDomain_
+
+#############################################################
+# pingaccess-admin values
+#############################################################
+pingaccess-admin:
+  enabled: false
+  name: pingaccess-admin
+  image:
+    name: pingaccess
+
+  workload:
+    type: StatefulSet
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+  # Example: If PingAccess Admin relies on pingfederate-admin for AuthN
+  #          Creates init container wait-for on pingfederate-admin https service
+  #
+  # container:
+  #   waitFor:
+  #     pingfederate-admin:
+  #       service: https
+  #       timeoutSeconds: 300
+
+  services:
+    https:
+      servicePort: 9000
+      containerPort: 9000
+      ingressPort: 443
+      dataService: true
+    clusterconfig:
+      servicePort: 9090
+      containerPort: 9090
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingaccess-admin._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingaccess-admin._defaultDomain_
+
+#############################################################
+# pingaccess-engine values
+#############################################################
+pingaccess-engine:
+  enabled: false
+  name: pingaccess-engine
+  image:
+    name: pingaccess
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: 1Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+    waitFor:
+      pingaccess-admin:
+        service: https
+        timeoutSeconds: 300
+
+  services:
+    https:
+      servicePort: 3000
+      containerPort: 3000
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingaccess-engine._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingaccess-engine._defaultDomain_
+
+#############################################################
+# pingdataconsole values
+#############################################################
+pingdataconsole:
+  enabled: false
+  name: pingdataconsole
+  image:
+    name: pingdataconsole
+
+  container:
+    resources:
+      requests:
+        cpu: 0
+        memory: .5Gi
+      limits:
+        cpu: 2
+        memory: 2Gi
+
+  defaultLogin:
+    server:
+      host: pingdirectory-cluster
+      port: 636
+    username: administrator
+
+  services:
+    https:
+      containerPort: 8443
+      servicePort: 8443
+      ingressPort: 443
+      dataService: true
+
+  ingress:
+    hosts:
+      - host: pingdataconsole._defaultDomain_
+        paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            serviceName: https
+    tls:
+      - secretName: _defaultTlsSecret_
+        hosts:
+          - pingdataconsole._defaultDomain_
+
+#############################################################
+# pd-replication-timing values
+#############################################################
+pd-replication-timing:
+  enabled: false
+  name: pd-replication-timing
+  image:
+    name: pingtoolkit
+
+  envs:
+    SERVER_PROFILE_URL: https://github.com/pingidentity/pingidentity-server-profiles.git
+    SERVER_PROFILE_PATH: dsreplication-timing
+    STARTUP_COMMAND: /opt/out/instance/bin/start-server
+    STARTUP_BACKGROUND_OPTS: ""
+
+#############################################################
+# pingtoolkit values
+#############################################################
+pingtoolkit:
+  enabled: false
+  name: pingtoolkit
+  image:
+    name: pingtoolkit
+
+#############################################################
+# testFramework
+#############################################################
+testFramework:
+  # Disabled by default
+  enabled: false
+  name: testframework
+  sharedMountPath: /var/run/shared
+
+  #########################################################
+  # If rbac is enabled, this will create:
+  #   - serviceAccount
+  #   - role
+  #   - roleBinding (between serviceAccount and role)
+  #
+  # and apply the serviceAccount to the pod in the tests.
+  # The names for these resources will be named using the
+  # naming rules for all resources including the ReleaseName
+  #########################################################
+  rbac:
+    enabled: true
+    role:
+      rules:
+      - apiGroups:
+        - '*'
+        resources:
+        - '*'
+        verbs:
+        - '*'
+
+  testConfigMaps:
+    prefix: ping-devops-test-
+    volumeMountPath: /var/run/
+    #########################################################
+    # Array of configmap names (prefixed with prefix above)
+    # Example includes:
+    #########################################################
+    # files:
+    #   - init-test.sh
+    #   - check-pingfederate.postman-collection.json
+    #   - generated.postman-environment.json
+
+  testSteps: []
+    #########################################################
+    # Array of steps.
+    # Example includes:
+    #
+    # waitFor - Example below will create 2 init containers:
+    #           - 01-wait-for-pingfederate-admin
+    #           - 01-wait-for-pingfederate-engine
+    #########################################################
+    # - name: 01-wait-for
+    #   waitFor:
+    #     pingfederate-admin:
+    #       service: https
+    #     pingfederate-engine:
+    #       service: https
+
+    # - name: 02-init-test
+    #   image: busybox
+    #   command:
+    #     - /bin/sh
+    #     - /var/run/init-test.sh
+
+    # - name: 03-check-pingfederate
+    #   image: postman/newman:5-alpine
+    #   command:
+    #     - newman
+    #     - run
+    #     - /var/run/check-pingfederate.postman-collection.json
+    #     - --environment
+    #     - /var/run/generated.postman-environment.json
+    #     - --insecure
+    #     - --ignore-redirects
+
+  finalStep:
+    name: 99-completion
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - /bin/sh
+      - -c
+      - echo "*************************************"; echo "Testing Complete"; date; echo "*************************************";
+      - exit 0
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 1m
+        memory: 64Mi
+
+  #########################################################
+  # Pod information to include
+  #
+  # Examples:
+  #   securityContext for all containers
+  #########################################################
+  pod:
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 2000

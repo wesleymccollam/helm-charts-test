@@ -1,0 +1,11 @@
+{{- include "pinglib.workload" (list . "pingdatagovernance") -}}
+
+
+
+{{- define "pingdatagovernance.workload" -}}
+spec:
+  template:
+    metadata:
+      labels:
+        clusterIdentifier: {{ include "pinglib.addreleasename" (append . "pingdatagovernance") }}
+{{- end -}}

@@ -1,0 +1,14 @@
+{{- include "pinglib.configmap" (list . "pingdelegator") -}}
+
+
+
+{{- define "pingdelegator.configmap" -}}
+{{- $top := index . 0 -}}
+{{- $v := index . 1 -}}
+data:
+  {{/* ISSUE when set to 443, due to fact that delegator cannot open port 443 --> PD_DELEGATOR_HTTPS_PORT: {{ $v.publicPort | quote  }} */}}
+  PD_DELEGATOR_PUBLIC_PORT: {{ $v.publicPort | quote  }}
+  PD_ENGINE_PUBLIC_PORT: {{ $v.pingDirectoryServer.port | quote }}
+  PF_ENGINE_PUBLIC_PORT: {{ $v.tokenProvider.port | quote }}
+  PF_DELEGATOR_CLIENTID: {{ $v.tokenProvider.clientId | quote  }}
+{{- end -}}

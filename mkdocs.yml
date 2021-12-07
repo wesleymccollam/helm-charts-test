@@ -1,0 +1,67 @@
+site_name: Ping Identity DevOps Helm Charts
+repo_name: pingidentity/helm-charts
+repo_url: https://github.com/pingidentity/helm-charts
+site_url: https://helm.pingidentity.com/
+copyright: © Copyright 2021 Ping Identity
+extra_css:
+  - mkdocs/overrides/stylesheets/extra.css
+
+theme:
+  name: material
+  custom_dir: docs/mkdocs/overrides
+  favicon: images/favicon.png
+
+  features:
+    - navigation.tabs
+    - instant
+
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      accent: blue
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      accent: blue
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+
+edit_uri: ""
+
+markdown_extensions:
+  - attr_list
+  - pymdownx.emoji
+  - admonition
+  - codehilite
+  - pymdownx.inlinehilite
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences
+  - meta
+  - toc:
+      # insert a blank space before the character
+      permalink: " ¶"
+
+nav:
+  - Welcome:
+      - Installation: "index.md"
+      - Getting Started: "getting-started.md"
+      - Release Notes: "release-notes.md"
+  - Value Configs:
+      - Introduction: "config/index.md"
+      - global: "config/global.md"
+      - Container: "config/container.md"
+      - External Image: "config/external-image.md"
+      - Image: "config/image.md"
+      - Ingress: "config/ingress.md"
+      - License: "config/license.md"
+      - PrivateCerts: "config/private-cert.md"
+      - Service: "config/service.md"
+      - Vault: "config/vault.md"
+      - VolumeMounts: "config/volume-mounts.md"
+      - Workload: "config/workload.md"
+  - Examples:
+      - Introduction: "examples/index.md"

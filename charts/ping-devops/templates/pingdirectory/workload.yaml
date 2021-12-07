@@ -1,0 +1,11 @@
+{{- include "pinglib.workload" (list . "pingdirectory") -}}
+
+
+
+{{- define "pingdirectory.workload" -}}
+spec:
+  template:
+    metadata:
+      labels:
+        clusterIdentifier: {{ include "pinglib.addreleasename" (append . "pingdirectory") }}
+{{- end -}}
